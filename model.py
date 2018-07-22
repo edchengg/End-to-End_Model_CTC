@@ -1,12 +1,7 @@
-'''
-Author: MofaCatch 2018
-'''
-
 import math
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.autograd import Variable
 import functions.ctc as ctc
 import torch.nn.functional as F
@@ -14,55 +9,66 @@ from ctc_decoder import decode
 
 class Model(nn.Module):
 
-    def __init__(self, input_dim, num_class, CUDA=False):
+    def __init__(self, input_dim, num_class, CONFIG):
         super(Model, self).__init__()
 
-        self.rnn = nn.GRU(input_size=input_dim,
-                          hidden_size=256,
-                          num_layers=4,
+        self.rnn = getattr(nn,CONFIG['model']['model_type'])(input_size=input_dim,
+                          hidden_size=CONFIG['model']['hid_dim'],
+                          num_layers=CONFIG['model']['layer'],
                           batch_first=True,
-                          dropout=0.6)
+                          dropout=CONFIG['model']['dropout'],
+                          bidirectional=CONFIG['model']['bi'])
 
-        self.fc = nn.Linear(256, num_class+1)
-        self.optimizer = optim.Adam(self.parameters())
-        self.cuda = CUDA
+        self.bidirectional = CONFIG['model']['bi']
+        self.fc = nn.Linear(CONFIG['model']['hid_dim'], num_class+1)
+
+        self.use_cuda = CONFIG['cuda']
         self.ctc_loss = ctc.CTCLoss()
+        self.blank = num_class
+        self.beam_size = CONFIG['optimizer']['beam']
 
-    def forward(self, batch):
-        x, y, x_lens, y_lens = self.collate(*batch)
+    def forward(self, inputs, labels):
+        x, y, x_lens, y_lens = self.collate(inputs, labels)
         return self.forward_imp(x), y, x_lens, y_lens
 
     def forward_imp(self, x, softmax=False):
-        if self.cuda:
+        # Multi GPU setting does not require .cuda()
+        if self.use_cuda:
             x = x.cuda()
+
         x, _ = self.rnn(x)
+
+        if self.bidirectional:
+            half = x.size(-1) // 2
+            x = x[:, :, :half] + x[:, :, half:]
+
         x = self.fc(x)
 
         if softmax: # for inference
-            return F.softmax(x, dim=2)
+            return x, F.softmax(x, dim=2)
         return x
 
-    def train_model(self, batch):
+    def train_model(self, inputs, labels, optimizer):
         self.train()
 
-        out, y, x_lens, y_lens = self.forward(batch)
-
+        out, y, x_lens, y_lens = self.forward(inputs, labels)
         loss = self.ctc_loss(out, y, x_lens, y_lens)
 
-        self.optimizer.zero_grad()
+        optimizer.zero_grad()
         loss.backward()
-        self.optimizer.step()
+        optimizer.step()
 
         return loss.item()
 
-    def eval_model(self, batch):
+    def eval_model(self, inputs, labels):
+        # Calculate loss and CER together
         self.eval()
-
-        out, y, x_lens, y_lens = self.forward(batch)
-
+        x, y, x_lens, y_lens = self.collate(inputs, labels)
+        out, probs = self.forward_imp(x, softmax=True)
         loss = self.ctc_loss(out, y, x_lens, y_lens)
-
-        return loss.item()
+        probs = probs.cpu().detach().numpy()
+        pred = [decode(p, beam_size=self.beam_size, blank=self.blank)[0] for p in probs]
+        return loss.item(), pred
 
 
     def collate(self, inputs, labels):
@@ -77,12 +83,13 @@ class Model(nn.Module):
 
         return batch
 
-    def infer(self, batch):
-        x, y, x_lens, y_lens = self.collate(*batch)
+    def infer(self, inputs, labels):
+        x, y, x_lens, y_lens = self.collate(inputs, labels)
         probs = self.forward_imp(x, softmax=True)
         probs = probs.cpu().detach().numpy()
-        res = [decode(p, beam_size=1, blank=self.blank)[0] for p in probs]
+        res = [decode(p, beam_size=self.beam_size, blank=self.blank)[0] for p in probs]
         return res
+
 
 
 
