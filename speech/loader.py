@@ -9,7 +9,9 @@ import scipy.signal
 import torch
 import torch.autograd as autograd
 import torch.utils.data as tud
-
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from speech.utils import wave
 
 class Preprocessor():
@@ -27,6 +29,7 @@ class Preprocessor():
                 in computing summary statistics.
             start_and_end (bool): Include start and end tokens in labels.
         """
+        random.seed(9669)
         data = read_data_json(data_json)
 
         # Compute data mean, std from sample
@@ -34,10 +37,10 @@ class Preprocessor():
         random.shuffle(audio_files)
         self.mean, self.std = compute_mean_std(audio_files[:max_samples])
         self._input_dim = self.mean.shape[0]
-        print(self._input_dim)
 
         # Make char map
-        chars = list(set(t for d in data for t in d['text']))
+        chars = list(sorted(set(t for d in data for t in d['text'])))
+
         if start_and_end:
             # START must be last so it can easily be
             # excluded in the output classes of a model.
@@ -151,23 +154,52 @@ def make_loader(dataset_json, preproc,
                 drop_last=True)
     return loader
 
-def log_specgram_from_file(audio_file):
+def log_specgram_from_file(audio_file, plot=False):
     audio, sr = wave.array_from_wave(audio_file)
-    return log_specgram(audio, sr)
+    return log_specgram(audio, sr, plot=plot)
 
 def log_specgram(audio, sample_rate, window_size=20,
-                 step_size=10, eps=1e-10):
+                 step_size=10, eps=1e-10, plot=False):
     nperseg = int(window_size * sample_rate // 1e3)
     noverlap = int(step_size * sample_rate // 1e3)
 
-    _, _, spec = scipy.signal.spectrogram(audio,
+    f, t, spec = scipy.signal.spectrogram(audio,
                     fs=sample_rate,
                     window='hann',
                     nperseg=nperseg,
                     noverlap=noverlap,
                     detrend=False)
-    return np.log(spec.T.astype(np.float32) + eps)
+    if plot:
+        return f, t, np.log(spec.T.astype(np.float32) + eps)
+    else:
+        return np.log(spec.T.astype(np.float32) + eps)
+
 
 def read_data_json(data_json):
     with open(data_json) as fid:
         return [json.loads(l) for l in fid]
+
+
+
+def plot_ori_recon_specgram(audio_file, model, save_path, use_cuda=False):
+    f, t, log_spec = log_specgram_from_file(audio_file, plot=True)
+    size_, _ = log_spec.shape
+    data = torch.Tensor(log_spec)
+    data = data.unsqueeze(0)
+    model.eval()
+    if use_cuda:
+        data = data.cuda()
+    recon_data,_,_ = model(data)
+    recon_data = recon_data.cpu().detach().numpy().squeeze(0)
+
+    plt.figure(figsize=(8,7))
+    ax1 = plt.subplot(2, 1, 1)
+    plt.pcolormesh(t, f, log_spec.T, cmap='Greys')
+    plt.title('Log Spectrogram Real')
+    ax2 = plt.subplot(2, 1, 2, sharex=ax1)
+    plt.pcolormesh(t, f, recon_data.T, cmap='Greys')
+    plt.title('Log Spectrogram Reconstruct')
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+
