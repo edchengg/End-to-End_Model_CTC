@@ -48,7 +48,9 @@ def decode(probs, beam_size=10, blank=0):
     Returns the output label sequence and the corresponding negative
     log-likelihood estimated by the decoder.
     """
+    #print(probs)
     T, S = probs.shape
+    #print(T, S)
     probs = np.log(probs)
 
     # Elements in the beam are (prefix, (p_blank, p_no_blank))
@@ -110,6 +112,10 @@ def decode(probs, beam_size=10, blank=0):
         beam = beam[:beam_size]
 
     best = beam[0]
+    if best[0] == ():
+        best_tmp = list(best)
+        best_tmp[0] = (31,) # <s> 31 # for qm use 22
+        best = tuple(best_tmp)
     return best[0], -logsumexp(*best[1])
 
 if __name__ == "__main__":
