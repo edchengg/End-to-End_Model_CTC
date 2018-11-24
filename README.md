@@ -13,3 +13,9 @@ This repository contains baseline models(3-5 layers Bi-LSTM) for ASR tasks on st
 |:----- |:------- |:-------|:-----|
 |Dev|11.86(CER)|6.1(CER)|13.429(PER)|
 |Test||4.6(CER)|15.967(PER)|
+
+## Visualization
+Visualization of LSTM hidden units before pretraining and after pretraining.
+
+![Alt Text](https://github.com/edchengg/End-to-End_Model_CTC/blob/master/img/5layers_pretrained_full_false.gif)
+![Alt Text](https://github.com/edchengg/End-to-End_Model_CTC/blob/master/img/5layers_pretrained_full_true.gif)
