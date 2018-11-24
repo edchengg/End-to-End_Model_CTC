@@ -10,5 +10,6 @@ This repository contains baseline models(3-5 layers Bi-LSTM) for ASR tasks on st
 
 ## Results
 || Switchboard     | WSJ         | TIMIT  |
+|:----- |:------- |:-------|:-----|
 |Dev|11.86(CER)|6.1(CER)|13.429(PER)|
 |Test||4.6(CER)|15.967(PER)|
